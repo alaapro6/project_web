@@ -1,0 +1,71 @@
+# Gift Finder - Docker Compose Configuration
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  database:
+    image: postgres:15-alpine
+    container_name: giftfinder_db
+    environment:
+      POSTGRES_DB: gift_finder
+      POSTGRES_USER: giftfinder
+      POSTGRES_PASSWORD: giftfinder2025
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - giftfinder_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U giftfinder"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend (Python Flask)
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: giftfinder_backend
+    environment:
+      DATABASE_URL: postgresql://giftfinder:giftfinder2025@database:5432/gift_finder
+      FLASK_ENV: production
+      SECRET_KEY: change-this-in-production
+      FRONTEND_URL: http://localhost:3000
+    ports:
+      - "5000:5000"
+    depends_on:
+      database:
+        condition: service_healthy
+    networks:
+      - giftfinder_network
+    command: >
+      sh -c "
+        python run.py init-db &&
+        python run.py seed-db &&
+        gunicorn -w 4 -b 0.0.0.0:5000 'app:create_app()'
+      "
+
+  # Frontend (React)
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../docker/Dockerfile.frontend
+    container_name: giftfinder_frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:5000/api/v1
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - giftfinder_network
+
+volumes:
+  postgres_data:
+
+networks:
+  giftfinder_network:
+    driver: bridge
