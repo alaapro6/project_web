@@ -1,10 +1,38 @@
-// Enhanced API client with admin routes
+/// <reference types="vite/client" />
+
+// ===============================
+// Enhanced API Client (FINAL FIX)
+// ===============================
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
-  'https://project-web-5cld.onrender.com/api/v1'
+  'https://project-web-5cld.onrender.com/api/v1';
 
+// ===============================
+// Helpers
+// ===============================
+
+function getAuthHeaders(): HeadersInit {
+  const token = localStorage.getItem('admin_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function handleResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    let message = 'Request failed';
+    try {
+      const data = await response.json();
+      message = data?.error || data?.message || message;
+    } catch {}
+    throw new Error(message);
+  }
+  return response.json() as Promise<T>;
+}
+
+// ===============================
 // Types
+// ===============================
+
 export interface Store {
   id: number;
   name_ar: string;
@@ -14,6 +42,8 @@ export interface Store {
   description_en?: string;
   image_url?: string;
   created_at?: string;
+  // ✅ تم إضافة هذا الحقل لحل خطأ StoreCard
+  gifts_count?: number;
 }
 
 export interface Gift {
@@ -52,159 +82,172 @@ export interface Recommendation {
   match_details: any;
 }
 
-// Public API Functions
+// ===============================
+// Public API
+// ===============================
 
 export async function getStores(): Promise<Store[]> {
-  const response = await fetch(`${API_BASE_URL}/stores`);
-  if (!response.ok) throw new Error('Failed to fetch stores');
-  return response.json();
+  const res = await fetch(`${API_BASE_URL}/stores`);
+  return handleResponse<Store[]>(res);
 }
 
-export async function getGifts(filters?: any): Promise<Gift[]> {
-  const params = new URLSearchParams(filters);
-  const response = await fetch(`${API_BASE_URL}/gifts?${params}`);
-  if (!response.ok) throw new Error('Failed to fetch gifts');
-  return response.json();
+export async function getGifts(
+  filters?: Record<string, any>
+): Promise<Gift[]> {
+  const params = filters
+    ? new URLSearchParams(filters).toString()
+    : '';
+  const res = await fetch(`${API_BASE_URL}/gifts?${params}`);
+  return handleResponse<Gift[]>(res);
 }
 
-export async function getRecommendations(criteria: RecommendationCriteria): Promise<Recommendation[]> {
-  const response = await fetch(`${API_BASE_URL}/gifts/recommend`, {
+export async function getRecommendations(
+  criteria: RecommendationCriteria
+): Promise<Recommendation[]> {
+  const res = await fetch(`${API_BASE_URL}/gifts/recommend`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(criteria),
   });
-  if (!response.ok) throw new Error('Failed to get recommendations');
-  return response.json();
+  return handleResponse<Recommendation[]>(res);
 }
 
 export async function getInterests(): Promise<string[]> {
-  const response = await fetch(`${API_BASE_URL}/interests`);
-  if (!response.ok) throw new Error('Failed to fetch interests');
-  return response.json();
+  const res = await fetch(`${API_BASE_URL}/interests`);
+  return handleResponse<string[]>(res);
 }
 
 export async function getCategories(): Promise<string[]> {
-  const response = await fetch(`${API_BASE_URL}/categories`);
-  if (!response.ok) throw new Error('Failed to fetch categories');
-  return response.json();
+  const res = await fetch(`${API_BASE_URL}/categories`);
+  return handleResponse<string[]>(res);
 }
 
-// Admin API Functions
+// ===============================
+// Admin Auth
+// ===============================
 
-export async function adminLogin(username: string, password: string): Promise<any> {
-  const response = await fetch(`${API_BASE_URL}/admin/login`, {
+export async function adminLogin(
+  username: string,
+  password: string
+): Promise<{ token: string }> {
+  const res = await fetch(`${API_BASE_URL}/admin/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
     body: JSON.stringify({ username, password }),
   });
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Login failed');
-  }
-  return response.json();
+
+  const data = await handleResponse<{ token: string }>(res);
+  localStorage.setItem('admin_token', data.token);
+  return data;
 }
 
-export async function adminLogout(): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/admin/logout`, {
-    method: 'POST',
-    credentials: 'include',
-  });
-  if (!response.ok) throw new Error('Logout failed');
+export function adminLogout() {
+  localStorage.removeItem('admin_token');
 }
 
-export async function checkAdminAuth(): Promise<any> {
-  const response = await fetch(`${API_BASE_URL}/admin/check`, {
-    credentials: 'include',
-  });
-  if (!response.ok) throw new Error('Not authenticated');
-  return response.json();
-}
+// ===============================
+// Admin Dashboard
+// ===============================
 
 export async function getAdminStats(): Promise<any> {
-  const response = await fetch(`${API_BASE_URL}/admin/stats`, {
-    credentials: 'include',
+  const res = await fetch(`${API_BASE_URL}/admin/stats`, {
+    headers: getAuthHeaders(),
   });
-  if (!response.ok) throw new Error('Failed to fetch stats');
-  return response.json();
+  return handleResponse(res);
 }
 
-// Admin Stores Management
+// ===============================
+// Admin Stores
+// ===============================
 
 export async function getAdminStores(): Promise<Store[]> {
-  const response = await fetch(`${API_BASE_URL}/admin/stores`, {
-    credentials: 'include',
+  const res = await fetch(`${API_BASE_URL}/admin/stores`, {
+    headers: getAuthHeaders(),
   });
-  if (!response.ok) throw new Error('Failed to fetch stores');
-  return response.json();
+  return handleResponse<Store[]>(res);
 }
 
-export async function createStore(store: Partial<Store>): Promise<Store> {
-  const response = await fetch(`${API_BASE_URL}/admin/stores`, {
+export async function createStore(
+  store: Partial<Store>
+): Promise<Store> {
+  const res = await fetch(`${API_BASE_URL}/admin/stores`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
     body: JSON.stringify(store),
   });
-  if (!response.ok) throw new Error('Failed to create store');
-  return response.json();
+  return handleResponse<Store>(res);
 }
 
-export async function updateStore(id: number, store: Partial<Store>): Promise<Store> {
-  const response = await fetch(`${API_BASE_URL}/admin/stores/${id}`, {
+export async function updateStore(
+  id: number,
+  store: Partial<Store>
+): Promise<Store> {
+  const res = await fetch(`${API_BASE_URL}/admin/stores/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
     body: JSON.stringify(store),
   });
-  if (!response.ok) throw new Error('Failed to update store');
-  return response.json();
+  return handleResponse<Store>(res);
 }
 
 export async function deleteStore(id: number): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/admin/stores/${id}`, {
+  const res = await fetch(`${API_BASE_URL}/admin/stores/${id}`, {
     method: 'DELETE',
-    credentials: 'include',
+    headers: getAuthHeaders(),
   });
-  if (!response.ok) throw new Error('Failed to delete store');
+  await handleResponse(res);
 }
 
-// Admin Gifts Management
+// ===============================
+// Admin Gifts
+// ===============================
 
 export async function getAdminGifts(): Promise<Gift[]> {
-  const response = await fetch(`${API_BASE_URL}/admin/gifts`, {
-    credentials: 'include',
+  const res = await fetch(`${API_BASE_URL}/admin/gifts`, {
+    headers: getAuthHeaders(),
   });
-  if (!response.ok) throw new Error('Failed to fetch gifts');
-  return response.json();
+  return handleResponse<Gift[]>(res);
 }
 
-export async function createGift(gift: Partial<Gift>): Promise<Gift> {
-  const response = await fetch(`${API_BASE_URL}/admin/gifts`, {
+export async function createGift(
+  gift: Partial<Gift>
+): Promise<Gift> {
+  const res = await fetch(`${API_BASE_URL}/admin/gifts`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
     body: JSON.stringify(gift),
   });
-  if (!response.ok) throw new Error('Failed to create gift');
-  return response.json();
+  return handleResponse<Gift>(res);
 }
 
-export async function updateGift(id: number, gift: Partial<Gift>): Promise<Gift> {
-  const response = await fetch(`${API_BASE_URL}/admin/gifts/${id}`, {
+export async function updateGift(
+  id: number,
+  gift: Partial<Gift>
+): Promise<Gift> {
+  const res = await fetch(`${API_BASE_URL}/admin/gifts/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
     body: JSON.stringify(gift),
   });
-  if (!response.ok) throw new Error('Failed to update gift');
-  return response.json();
+  return handleResponse<Gift>(res);
 }
 
 export async function deleteGift(id: number): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/admin/gifts/${id}`, {
+  const res = await fetch(`${API_BASE_URL}/admin/gifts/${id}`, {
     method: 'DELETE',
-    credentials: 'include',
+    headers: getAuthHeaders(),
   });
-  if (!response.ok) throw new Error('Failed to delete gift');
+  await handleResponse(res);
 }
