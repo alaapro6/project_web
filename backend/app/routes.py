@@ -1,15 +1,16 @@
 """
 API Routes for Gift Finder
-Includes public routes and admin routes (JWT based)
+Public & Admin routes (JWT Authentication)
 """
 
 from flask import Blueprint, request, jsonify
 from functools import wraps
-from .models import db, Store, Gift, Recommendation, Admin
-from .recommendation import get_recommendations
 from sqlalchemy import func
 import jwt
 import os
+
+from .models import db, Store, Gift, Recommendation, Admin
+from .recommendation import get_recommendations
 
 # ================== CONFIG ==================
 JWT_SECRET = os.getenv("JWT_SECRET", "super-secret-key")
@@ -17,8 +18,7 @@ JWT_ALGORITHM = "HS256"
 
 # ================== BLUEPRINTS ==================
 api = Blueprint("api", __name__)
-admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
-
+admin_bp = Blueprint("admin", __name__)
 
 # ================== AUTH DECORATOR ==================
 def admin_required(f):
@@ -38,30 +38,25 @@ def admin_required(f):
 
         except jwt.ExpiredSignatureError:
             return jsonify({"error": "Token expired"}), 401
-        except Exception:
+        except jwt.InvalidTokenError:
             return jsonify({"error": "Invalid token"}), 401
 
         return f(*args, **kwargs)
     return decorated
-
 
 # ================== PUBLIC ROUTES ==================
 @api.route("/health", methods=["GET"])
 def health_check():
     return jsonify({"status": "ok", "message": "Gift Finder API is running"})
 
-
 @api.route("/stores", methods=["GET"])
 def get_stores():
-    stores = Store.query.all()
-    return jsonify([s.to_dict() for s in stores])
-
+    return jsonify([s.to_dict() for s in Store.query.all()])
 
 @api.route("/stores/<int:store_id>", methods=["GET"])
 def get_store(store_id):
     store = Store.query.get_or_404(store_id)
     return jsonify(store.to_dict())
-
 
 @api.route("/gifts", methods=["GET"])
 def get_gifts():
@@ -79,12 +74,10 @@ def get_gifts():
 
     return jsonify([g.to_dict() for g in query.all()])
 
-
 @api.route("/gifts/<int:gift_id>", methods=["GET"])
 def get_gift(gift_id):
     gift = Gift.query.get_or_404(gift_id)
     return jsonify(gift.to_dict())
-
 
 @api.route("/gifts/recommend", methods=["POST"])
 def recommend_gifts():
@@ -122,7 +115,6 @@ def recommend_gifts():
 
     return jsonify(recommendations)
 
-
 @api.route("/interests", methods=["GET"])
 def get_interests():
     return jsonify([
@@ -130,53 +122,52 @@ def get_interests():
         "fashion", "cooking", "travel", "art", "fitness"
     ])
 
-
 @api.route("/categories", methods=["GET"])
 def get_categories():
     categories = db.session.query(Gift.category).distinct().all()
     return jsonify([c[0] for c in categories])
 
-
 # ================== ADMIN AUTH ==================
 @admin_bp.route("/login", methods=["POST"])
 def admin_login():
     data = request.get_json()
+
     admin = Admin.query.filter_by(username=data.get("username")).first()
+    if not admin or not admin.check_password(data.get("password")):
+        return jsonify({"error": "Invalid credentials"}), 401
 
-    if admin and admin.check_password(data.get("password")):
-        token = jwt.encode(
-            {"role": "admin", "admin_id": admin.id},
-            JWT_SECRET,
-            algorithm=JWT_ALGORITHM,
-        )
-        return jsonify({"token": token})
+    token = jwt.encode(
+        {"role": "admin", "admin_id": admin.id},
+        JWT_SECRET,
+        algorithm=JWT_ALGORITHM,
+    )
 
-    return jsonify({"error": "Invalid credentials"}), 401
+    if isinstance(token, bytes):
+        token = token.decode("utf-8")
 
+    return jsonify({"token": token})
 
 # ================== ADMIN DASHBOARD ==================
 @admin_bp.route("/stats", methods=["GET"])
 @admin_required
-def get_stats():
+def admin_stats():
     return jsonify({
         "total_stores": Store.query.count(),
         "total_gifts": Gift.query.count(),
         "total_searches": Recommendation.query.count(),
         "category_stats": [
-            {"category": c[0], "count": c[1]}
-            for c in db.session.query(
+            {"category": c, "count": n}
+            for c, n in db.session.query(
                 Gift.category, func.count(Gift.id)
             ).group_by(Gift.category).all()
-        ],
+        ]
     })
-
 
 # ================== ADMIN STORES ==================
 @admin_bp.route("/stores", methods=["GET"])
 @admin_required
 def admin_get_stores():
     return jsonify([s.to_dict() for s in Store.query.all()])
-
 
 @admin_bp.route("/stores", methods=["POST"])
 @admin_required
@@ -185,7 +176,6 @@ def admin_create_store():
     db.session.add(store)
     db.session.commit()
     return jsonify(store.to_dict()), 201
-
 
 @admin_bp.route("/stores/<int:store_id>", methods=["PUT"])
 @admin_required
@@ -196,7 +186,6 @@ def admin_update_store(store_id):
     db.session.commit()
     return jsonify(store.to_dict())
 
-
 @admin_bp.route("/stores/<int:store_id>", methods=["DELETE"])
 @admin_required
 def admin_delete_store(store_id):
@@ -205,13 +194,11 @@ def admin_delete_store(store_id):
     db.session.commit()
     return jsonify({"message": "Store deleted"})
 
-
 # ================== ADMIN GIFTS ==================
 @admin_bp.route("/gifts", methods=["GET"])
 @admin_required
 def admin_get_gifts():
     return jsonify([g.to_dict() for g in Gift.query.all()])
-
 
 @admin_bp.route("/gifts", methods=["POST"])
 @admin_required
@@ -221,7 +208,6 @@ def admin_create_gift():
     db.session.commit()
     return jsonify(gift.to_dict()), 201
 
-
 @admin_bp.route("/gifts/<int:gift_id>", methods=["PUT"])
 @admin_required
 def admin_update_gift(gift_id):
@@ -230,7 +216,6 @@ def admin_update_gift(gift_id):
         setattr(gift, k, v)
     db.session.commit()
     return jsonify(gift.to_dict())
-
 
 @admin_bp.route("/gifts/<int:gift_id>", methods=["DELETE"])
 @admin_required
