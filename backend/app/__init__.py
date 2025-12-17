@@ -1,12 +1,8 @@
-"""
-Flask application factory
-"""
 from flask import Flask
 from flask_cors import CORS
 from .models import db, Admin
 from .routes import api, admin_bp
 from config import Config
-
 
 def create_app(config_class=Config):
     """Create and configure Flask application"""
@@ -17,9 +13,13 @@ def create_app(config_class=Config):
     db.init_app(app)
     
     # Configure CORS
-    CORS(app, 
-         origins=[app.config['FRONTEND_URL'], 'http://localhost:3000'],
-         supports_credentials=True)
+    # تم التعديل هنا للسماح للجميع (*)
+    CORS(app, resources={r"/*": {"origins": "*"}})
+    
+    # ملاحظة: إذا كنت تحتاج إلى cookies/credentials مع *، 
+    # قد ترفض المتصفحات ذلك لأسباب أمنية.
+    # في حال أردت تفعيلها للكل (غير مستحسن أمنياً) يمكنك استخدام:
+    # CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True) 
     
     # Register blueprints
     app.register_blueprint(api, url_prefix='/api/v1')
